@@ -3,17 +3,40 @@
 #include "Timer.h"
 #include "Wind.h"
 
-//id 13878
-#if CURRENT_RELEASE_RUNTIME == RUNTIME_VERSION_1_6_353
-RelocAddr<Sky* (*)()> GetSky(0x00181810);
-#elif CURRENT_RELEASE_RUNTIME == RUNTIME_VERSION_1_6_640
-RelocAddr<Sky* (*)()> GetSky(0x00183530);
-#elif CURRENT_RELEASE_RUNTIME == RUNTIME_VERSION_1_6_1130
-RelocAddr<Sky* (*)()> GetSky(0x001c2550);
-#elif CURRENT_RELEASE_RUNTIME == RUNTIME_VERSION_1_6_1170
-RelocAddr<Sky* (*)()> GetSky(0x001c2640);
-#endif
+namespace
+{
+	// Layout of FSMP's hdt::SkinnedMeshBone (src/hdtSkinnedMesh/hdtSkinnedMeshBone.h):
+	//   +0x00 vfptr, +0x08 RE::BSIntrusiveRefCounted, +0x10 RE::BSFixedString m_name, ... btRigidBody m_rig
+	// FSMP sets m_rig.setUserPointer(this), so the rigid body's user pointer is the bone.
+	// m_name is the skeleton node name (possibly prefixed by FSMP's auto-rename).
+	// NOTE: This is NOT part of FSMP's public API and may break without warning in a future FSMP version.
+	constexpr std::uintptr_t BONE_NAME_OFFSET = 0x10;
 
+	constexpr std::string_view AUTORENAME_PREFIX = "hdtSSEPhysics_AutoRename_"sv;
+
+	const char* getBoneName(const btRigidBody* body)
+	{
+		auto bone = reinterpret_cast<std::uintptr_t>(body->getUserPointer());
+		if (!bone) {
+			return nullptr;
+		}
+
+		auto name = *reinterpret_cast<const char* const*>(bone + BONE_NAME_OFFSET);
+		if (!name) {
+			return nullptr;
+		}
+
+		// "hdtSSEPhysics_AutoRename_Armor_XXXXXXXX <bone>" / "hdtSSEPhysics_AutoRename_Head_XXXXXXXX <bone>"
+		std::string_view sv(name);
+		if (sv.starts_with(AUTORENAME_PREFIX)) {
+			auto space = sv.find(' ', AUTORENAME_PREFIX.size());
+			if (space != std::string_view::npos) {
+				return name + space + 1;
+			}
+		}
+		return name;
+	}
+}
 
 static float randf(float min = 0.0f, float max = 1.0f)
 {
@@ -22,6 +45,14 @@ static float randf(float min = 0.0f, float max = 1.0f)
 	assert(max > min);
 	std::uniform_real_distribution<float> d(min, max);
 	return d(rng);
+}
+
+RE::BSEventNotifyControl wind::Wind::ProcessEvent(const hdt::PreStepEvent* e, RE::BSTEventSource<hdt::PreStepEvent>*)
+{
+	if (e) {
+		onEvent(*e);
+	}
+	return RE::BSEventNotifyControl::kContinue;
 }
 
 void wind::Wind::onEvent(const hdt::PreStepEvent& e)
@@ -38,13 +69,14 @@ void wind::Wind::onEvent(const hdt::PreStepEvent& e)
 	assert(m_config);
 
 	m_currentTime += e.timeStep;
-	m_sky = GetSky();
-	if (m_sky && m_sky->mode == Sky::kFull && m_sky->windSpeed != 0.0f) {
-		
+	m_sky = RE::Sky::GetSingleton();
+	if (m_sky && m_sky->mode == RE::Sky::Mode::kFull && m_sky->windSpeed != 0.0f) {
+
 		if (e.objects.size() > 0) {
 
-			m_currentDir = btVector3(std::cosf(m_sky->windDirection), std::sinf(m_sky->windDirection), 0.0f);
-			m_orthoDir = btVector3(std::cosf(m_sky->windDirection - 1.5708f), std::sinf(m_sky->windDirection - 1.5708f), 0.0f);
+			const float dir = m_sky->windAngle;
+			m_currentDir = btVector3(std::cos(dir), std::sin(dir), 0.0f);
+			m_orthoDir = btVector3(std::cos(dir - 1.5708f), std::sin(dir - 1.5708f), 0.0f);
 
 			if (m_threadPool && e.objects.size() > m_config->geti(Config::MULTITHREAD_THRESHOLD)) {
 
@@ -98,7 +130,7 @@ void wind::Wind::onEvent(const hdt::PreStepEvent& e)
 			}
 			var /= NFRAMES;
 
-			_MESSAGE("Mean time (%d updates): %3d ± %-3d (%3d - %-3d) microseconds (%3d - %-3d collision objects)",
+			_MESSAGE("Mean time (%d updates): %3d Â± %-3d (%3d - %-3d) microseconds (%3d - %-3d collision objects)",
 				NFRAMES, meant, (int)std::sqrt(var), mint, maxt, mino, maxo);
 		}
 	}
@@ -142,10 +174,10 @@ btVector3 wind::Wind::eval(const btVector3& at)
 		float phase02 = m_config->getf(Config::OSC02FREQ) * (m_currentTime - U - V);
 
 		//Two different frequencies makes fluctuations less predictable
-		btVector3 base = (1.0f + 0.5f * m_config->getf(Config::OSC01FORCE) * (std::cosf(phase01) + std::cosf(0.2692f * phase01))) * m_currentDir;
+		btVector3 base = (1.0f + 0.5f * m_config->getf(Config::OSC01FORCE) * (std::cos(phase01) + std::cos(0.2692f * phase01))) * m_currentDir;
 
-		float angle = m_sky->windDirection + 0.5f * m_config->getf(Config::OSC02SPAN) * (std::cosf(phase02) + std::cosf(0.3101f * phase02));
-		btVector3 spread = m_config->getf(Config::OSC02FORCE) * btVector3(std::cosf(angle), std::sinf(angle), 0.0f);
+		float angle = m_sky->windAngle + 0.5f * m_config->getf(Config::OSC02SPAN) * (std::cos(phase02) + std::cos(0.3101f * phase02));
+		btVector3 spread = m_config->getf(Config::OSC02FORCE) * btVector3(std::cos(angle), std::sin(angle), 0.0f);
 
 		btVector3 noise = m_config->getf(Config::NOISE) * btVector3(randf(-1.0f, 1.0f), randf(-1.0f, 1.0f), randf(-1.0f, 1.0f));
 
@@ -167,33 +199,8 @@ void wind::Wind::process(btCollisionObject* object)
 
 		if (m_config->hasBoneFactors()) {
 
-			//hack
-			//The btRigidBody should be a member of an hdt::SkyrimBone, which also has the bone's NiNode* as a member
-			//offsetof(hdt::SkyrimBone, m_name) == 16		doesn't actually store the name?
-			//offsetof(hdt::SkyrimBone, m_rig) == 48		btRigidBody
-			//offsetof(hdt::SkyrimBone, m_node) == 1112		NiNode*
-			//NOTE: This is NOT part of FSMPs public API and may break, without warning, in any past or future version
-			auto node = *reinterpret_cast<uintptr_t*>(reinterpret_cast<uintptr_t>(body) + 1064);
-			if (node) {
-
-				//name is really a BSFixedString, but we're unable to exploit this due to the renaming
-				auto name = *reinterpret_cast<const char**>(node + 16);
-				if (name) {
-
-					//they should have added "hdtSSEPhysics_AutoRename_Armor_XXXXXXXX " or 
-					// "hdtSSEPhysics_AutoRename_Head_XXXXXXXX " before the bone name
-
-					const char* begin = name;
-
-					if (name[25] == 'A') {
-						begin = name + 40;
-					}
-					else if (name[25] == 'H') {
-						begin = name + 39;
-					}
-
-					factor = m_config->getBoneFactor(begin);
-				}
+			if (auto name = getBoneName(body)) {
+				factor = m_config->getBoneFactor(name);
 			}
 		}
 
@@ -217,7 +224,6 @@ void wind::Wind::processThreadsafe()
 wind::Wind::ThreadPool::ThreadPool(int count) :
 	m_barrier(count + 1)
 {
-	assert(owner);
 	assert(count > 0 && count <= MAX_THREADS);
 
 	m_threads.resize(count);

@@ -8,7 +8,7 @@ namespace wind
 	extern Config g_configDefault;
 	extern Wind g_wind;
 
-	static bool getBool(StaticFunctionTag*, SInt32 id)
+	static bool getBool(RE::StaticFunctionTag*, std::int32_t id)
 	{
 		if (id >= 0 && id < Config::BOOL_COUNT) {
 			return g_config.getb(id);
@@ -18,7 +18,7 @@ namespace wind
 		}
 	}
 
-	static bool getBoolDefault(StaticFunctionTag*, SInt32 id)
+	static bool getBoolDefault(RE::StaticFunctionTag*, std::int32_t id)
 	{
 		if (id >= 0 && id < Config::BOOL_COUNT) {
 			return g_configDefault.getb(id);
@@ -28,14 +28,14 @@ namespace wind
 		}
 	}
 
-	static void setBool(StaticFunctionTag*, SInt32 id, bool b)
+	static void setBool(RE::StaticFunctionTag*, std::int32_t id, bool b)
 	{
 		if (id >= 0 && id < Config::BOOL_COUNT) {
 			g_config.set(id, b);
 		}
 	}
 
-	static float getFloat(StaticFunctionTag*, SInt32 id)
+	static float getFloat(RE::StaticFunctionTag*, std::int32_t id)
 	{
 		if (id >= 0 && id < Config::FLOAT_COUNT) {
 			return g_config.getf(id);
@@ -45,7 +45,7 @@ namespace wind
 		}
 	}
 
-	static float getFloatDefault(StaticFunctionTag*, SInt32 id)
+	static float getFloatDefault(RE::StaticFunctionTag*, std::int32_t id)
 	{
 		if (id >= 0 && id < Config::FLOAT_COUNT) {
 			return g_configDefault.getf(id);
@@ -55,14 +55,14 @@ namespace wind
 		}
 	}
 
-	static void setFloat(StaticFunctionTag*, SInt32 id, float f)
+	static void setFloat(RE::StaticFunctionTag*, std::int32_t id, float f)
 	{
 		if (id >= 0 && id < Config::FLOAT_COUNT) {
 			g_config.set(id, f);
 		}
 	}
 
-	static SInt32 getInt(StaticFunctionTag*, SInt32 id)
+	static std::int32_t getInt(RE::StaticFunctionTag*, std::int32_t id)
 	{
 		if (id >= 0 && id < Config::INT_COUNT) {
 			return g_config.geti(id);
@@ -72,7 +72,7 @@ namespace wind
 		}
 	}
 
-	static SInt32 getIntDefault(StaticFunctionTag*, SInt32 id)
+	static std::int32_t getIntDefault(RE::StaticFunctionTag*, std::int32_t id)
 	{
 		if (id >= 0 && id < Config::INT_COUNT) {
 			return g_configDefault.geti(id);
@@ -82,7 +82,7 @@ namespace wind
 		}
 	}
 
-	static void setInt(StaticFunctionTag*, SInt32 id, SInt32 i)
+	static void setInt(RE::StaticFunctionTag*, std::int32_t id, std::int32_t i)
 	{
 		if (id >= 0 && id < Config::INT_COUNT) {
 			g_config.set(id, static_cast<int>(i));
@@ -94,57 +94,26 @@ namespace wind
 	}
 
 
-	bool registerFunctions(VMClassRegistry* vmcr)
+	bool registerFunctions(RE::BSScript::IVirtualMachine* vm)
 	{
-		assert(vmcr);
+		if (!vm) {
+			return false;
+		}
 
-		vmcr->RegisterFunction(new NativeFunction1<StaticFunctionTag,
-			bool,
-			SInt32>
-			("GetBool", "JGWD_MCM", &getBool, vmcr));
-		vmcr->RegisterFunction(new NativeFunction1<StaticFunctionTag,
-			bool,
-			SInt32>
-			("GetBoolDefault", "JGWD_MCM", &getBoolDefault, vmcr));
-		vmcr->RegisterFunction(new NativeFunction2<StaticFunctionTag,
-			void,
-			SInt32, bool>
-			("SetBool", "JGWD_MCM", &setBool, vmcr));
+		constexpr auto CLASS = "JGWD_MCM"sv;
 
-		vmcr->RegisterFunction(new NativeFunction1<StaticFunctionTag,
-			float,
-			SInt32>
-			("GetFloat", "JGWD_MCM", &getFloat, vmcr));
-		vmcr->RegisterFunction(new NativeFunction1<StaticFunctionTag,
-			float,
-			SInt32>
-			("GetFloatDefault", "JGWD_MCM", &getFloatDefault, vmcr));
-		vmcr->RegisterFunction(new NativeFunction2<StaticFunctionTag,
-			void,
-			SInt32, float>
-			("SetFloat", "JGWD_MCM", &setFloat, vmcr));
+		// Getters were flagged NoWait in the original (callable from tasklets)
+		vm->RegisterFunction("GetBool"sv, CLASS, getBool, true);
+		vm->RegisterFunction("GetBoolDefault"sv, CLASS, getBoolDefault, true);
+		vm->RegisterFunction("SetBool"sv, CLASS, setBool);
 
-		vmcr->RegisterFunction(new NativeFunction1<StaticFunctionTag,
-			SInt32,
-			SInt32>
-			("GetInt", "JGWD_MCM", &getInt, vmcr));
-		vmcr->RegisterFunction(new NativeFunction1<StaticFunctionTag,
-			SInt32,
-			SInt32>
-			("GetIntDefault", "JGWD_MCM", &getIntDefault, vmcr));
-		vmcr->RegisterFunction(new NativeFunction2<StaticFunctionTag,
-			void,
-			SInt32, SInt32>
-			("SetInt", "JGWD_MCM", &setInt, vmcr));
+		vm->RegisterFunction("GetFloat"sv, CLASS, getFloat, true);
+		vm->RegisterFunction("GetFloatDefault"sv, CLASS, getFloatDefault, true);
+		vm->RegisterFunction("SetFloat"sv, CLASS, setFloat);
 
-		vmcr->SetFunctionFlags("JGWD_MCM", "GetBool", VMClassRegistry::kFunctionFlag_NoWait);
-		vmcr->SetFunctionFlags("JGWD_MCM", "GetBoolDefault", VMClassRegistry::kFunctionFlag_NoWait);
-
-		vmcr->SetFunctionFlags("JGWD_MCM", "GetFloat", VMClassRegistry::kFunctionFlag_NoWait);
-		vmcr->SetFunctionFlags("JGWD_MCM", "GetFloatDefault", VMClassRegistry::kFunctionFlag_NoWait);
-
-		vmcr->SetFunctionFlags("JGWD_MCM", "GetInt", VMClassRegistry::kFunctionFlag_NoWait);
-		vmcr->SetFunctionFlags("JGWD_MCM", "GetIntDefault", VMClassRegistry::kFunctionFlag_NoWait);
+		vm->RegisterFunction("GetInt"sv, CLASS, getInt, true);
+		vm->RegisterFunction("GetIntDefault"sv, CLASS, getIntDefault, true);
+		vm->RegisterFunction("SetInt"sv, CLASS, setInt);
 
 		return true;
 	}

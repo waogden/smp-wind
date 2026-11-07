@@ -1,98 +1,73 @@
 #pragma once
+
 #include "PluginAPI.h"
 
 namespace hdt
 {
 	constexpr bool operator<(const PluginInterface::Version& lhs, const PluginInterface::Version& rhs)
 	{
-		bool result = false;
-
-		if (lhs.major < rhs.major) {
-			result = true;
+		if (lhs.major != rhs.major) {
+			return lhs.major < rhs.major;
 		}
-		else if (lhs.major == rhs.major) {
-			if (lhs.minor < rhs.minor) {
-				result = true;
-			}
-			else if (lhs.minor == rhs.minor) {
-				result = lhs.patch < rhs.patch;
-			}
+		if (lhs.minor != rhs.minor) {
+			return lhs.minor < rhs.minor;
 		}
-
-		return result;
-	}
-	constexpr bool operator>(const PluginInterface::Version& lhs, const PluginInterface::Version& rhs)
-	{
-		return rhs < lhs;
-	}
-	constexpr bool operator>=(const PluginInterface::Version& lhs, const PluginInterface::Version& rhs)
-	{
-		return !(lhs < rhs);
-	}
-	constexpr bool operator<=(const PluginInterface::Version& lhs, const PluginInterface::Version& rhs)
-	{
-		return !(rhs < lhs);
+		return lhs.patch < rhs.patch;
 	}
 
-	template<typename T>
-	class PluginHelper : T
+	constexpr bool operator>(const PluginInterface::Version& lhs, const PluginInterface::Version& rhs) { return rhs < lhs; }
+	constexpr bool operator>=(const PluginInterface::Version& lhs, const PluginInterface::Version& rhs) { return !(lhs < rhs); }
+	constexpr bool operator<=(const PluginInterface::Version& lhs, const PluginInterface::Version& rhs) { return !(rhs < lhs); }
+
+	// Connects to HDT-SMP (FSMP) through the SKSE messaging interface.
+	// T must provide interfaceMin/Max, bulletMin/Max and onConnect(PluginInterface*).
+	template <typename T>
+	class PluginHelper
 	{
 	public:
-		static bool tryConnect(const SKSEInterface* skse, bool externalCallback = false)
+		static bool tryConnect()
 		{
-			assert(skse);
-
-			s_interface = reinterpret_cast<SKSEMessagingInterface*>(skse->QueryInterface(kInterface_Messaging));
-			if (s_interface) {
-				s_handle = skse->GetPluginHandle();
-				if (!externalCallback) {
-					s_interface->RegisterListener(s_handle, "SKSE", &skseCallback);
-				}
-				return true;
-			}
-			else {
-				_ERROR("ERROR: Failed to get an SKSEMessagingInterface.");
+			auto messaging = SKSE::GetMessagingInterface();
+			if (!messaging) {
+				_ERROR("ERROR: Failed to get the SKSE messaging interface.");
 				return false;
 			}
+			return messaging->RegisterListener("SKSE", &skseCallback);
 		}
 
-		static void skseCallback(SKSEMessagingInterface::Message* msg)
+	private:
+		static void skseCallback(SKSE::MessagingInterface::Message* msg)
 		{
-			if (msg && msg->type == SKSEMessagingInterface::kMessage_PostLoad) {
-				if (s_interface->RegisterListener(s_handle, "hdtSMP64", &smpCallback)) {
+			if (msg && msg->type == SKSE::MessagingInterface::kPostLoad) {
+				if (SKSE::GetMessagingInterface()->RegisterListener("hdtSMP64", &smpCallback)) {
 					_MESSAGE("Connecting to HDT-SMP...");
-				}
-				else {
+				} else {
 					_ERROR("ERROR: HDT-SMP is not loaded.");
 				}
 			}
-			T::skseCallback(msg);
 		}
 
-		static void smpCallback(SKSEMessagingInterface::Message* msg)
+		static void smpCallback(SKSE::MessagingInterface::Message* msg)
 		{
-			if (msg && msg->type == hdt::PluginInterface::MSG_STARTUP && msg->data) {
-				auto smp = reinterpret_cast<hdt::PluginInterface*>(msg->data);
-
+			if (msg && msg->type == PluginInterface::MSG_STARTUP && msg->data) {
+				auto smp = static_cast<PluginInterface*>(msg->data);
 				auto&& info = smp->getVersionInfo();
+
+				_MESSAGE("HDT-SMP interface %d.%d.%d, Bullet %d.%d.%d",
+					info.interfaceVersion.major, info.interfaceVersion.minor, info.interfaceVersion.patch,
+					info.bulletVersion.major, info.bulletVersion.minor, info.bulletVersion.patch);
 
 				if (info.interfaceVersion >= T::interfaceMin && info.interfaceVersion < T::interfaceMax) {
 					if (info.bulletVersion >= T::bulletMin && info.bulletVersion < T::bulletMax) {
-						_MESSAGE("Connection established.\n");
+						_MESSAGE("Connection established.");
 						T::onConnect(smp);
-					}
-					else {
+					} else {
 						_ERROR("ERROR: Incompatible Bullet version.");
 					}
-				}
-				else {
+				} else {
 					_ERROR("ERROR: Incompatible HDT-SMP interface.");
 				}
 			}
 		}
-
-	private:
-		inline static SKSEMessagingInterface* s_interface{};
-		inline static PluginHandle s_handle{};
 	};
 }

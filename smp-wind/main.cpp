@@ -5,124 +5,112 @@
 #include "Config.h"
 #include "Wind.h"
 
-constexpr unsigned long VERSION_MAJOR{ 2 };
-constexpr unsigned long VERSION_MINOR{ 3 };
-constexpr unsigned long VERSION_PATCH{ 0 };
-constexpr unsigned long VERSION = (VERSION_MAJOR & 0xFF) << 24 | (VERSION_MINOR & 0xFF) << 16 | (VERSION_PATCH & 0xFF) << 8;
-
-class VMClassRegistry;
-
 namespace wind
 {
 	Config g_config;
 	Config g_configDefault;
 	Wind g_wind;
 
-	bool registerFunctions(VMClassRegistry* vcr);
+	bool registerFunctions(RE::BSScript::IVirtualMachine* vm);
 }
 
-class MyHelper
+namespace
 {
-public:
-	inline static hdt::PluginInterface::Version interfaceMin{ 1, 0, 0 };
-	inline static hdt::PluginInterface::Version interfaceMax{ 2, 0, 0 };
-
-	inline static hdt::PluginInterface::Version bulletMin{ hdt::PluginInterface::BULLET_VERSION };
-	inline static hdt::PluginInterface::Version bulletMax{ hdt::PluginInterface::BULLET_VERSION.major + 1, 0, 0 };
-
-	static void onConnect(hdt::PluginInterface* smp)
+	class MyHelper
 	{
-		PWSTR wpath;
-		HRESULT res = SHGetKnownFolderPath(FOLDERID_Documents, 0, NULL, &wpath);
-		if (SUCCEEDED(res)) {
-			std::filesystem::path documents(wpath, std::filesystem::path::native_format);
+	public:
+		// FSMP's CommonLib-based plugin interface (RE::BSTEventSink listeners)
+		inline static hdt::PluginInterface::Version interfaceMin{ 2, 0, 0 };
+		inline static hdt::PluginInterface::Version interfaceMax{ 3, 0, 0 };
 
-			_MESSAGE("Loading settings...");
-			if (wind::g_config.load(documents / "My Games\\" SAVE_FOLDER_NAME "\\SKSE\\SMP Wind.ini")) {
-				_MESSAGE("Settings loaded.\n");
+		inline static hdt::PluginInterface::Version bulletMin{ hdt::PluginInterface::BULLET_VERSION };
+		inline static hdt::PluginInterface::Version bulletMax{ hdt::PluginInterface::BULLET_VERSION.major + 1, 0, 0 };
+
+		static void onConnect(hdt::PluginInterface* smp)
+		{
+			if (auto dir = logger::log_directory()) {
+				_MESSAGE("Loading settings...");
+				if (wind::g_config.load(*dir / "SMP Wind.ini")) {
+					_MESSAGE("Settings loaded.");
+				} else {
+					_WARNING("WARNING: Failed to load config file. Settings will not be saved.");
+				}
+			} else {
+				_WARNING("WARNING: SKSE log directory not found. Settings will not be saved.");
 			}
-			else {
-				_WARNING("WARNING: Failed to load config file. Settings will not be saved.\n");
-			}
+
+			wind::g_wind.init(wind::g_config);
+
+			smp->addListener(&wind::g_wind);
+
+			_MESSAGE("Initialisation complete.");
 		}
-		else {
-			_WARNING("WARNING: Documents folder not found. Settings will not be saved.\n");
-		}
-
-		wind::g_wind.init(wind::g_config);
-
-		smp->addListener(&wind::g_wind);
-
-		_MESSAGE("Initialisation complete.\n");
-	}
-
-	static void skseCallback(SKSEMessagingInterface::Message* msg) {}
-};
-
-extern "C" {
-
-	__declspec(dllexport) SKSEPluginVersionData SKSEPlugin_Version = {
-		SKSEPluginVersionData::kVersion,
-		VERSION,
-		"SMP Wind",
-		"jgernandt",
-		"",
-#if CURRENT_RELEASE_RUNTIME > RUNTIME_VERSION_1_6_353
-		0,
-#endif
-		0,
-		{ CURRENT_RELEASE_RUNTIME, 0 },
-		0,
 	};
 
-	__declspec(dllexport) bool SKSEPlugin_Load(const SKSEInterface* skse)
+	void initLog()
 	{
-		assert(skse);
+		auto dir = logger::log_directory();
+		if (!dir) {
+			return;
+		}
 
-		gLog.OpenRelative(CSIDL_MYDOCUMENTS, "\\My Games\\" SAVE_FOLDER_NAME "\\SKSE\\SMP Wind.log");
-#ifdef _DEBUG
-		gLog.SetPrintLevel(IDebugLog::kLevel_DebugMessage);
-		gLog.SetLogLevel(IDebugLog::kLevel_DebugMessage);
+		auto sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>((*dir / "SMP Wind.log").string(), true);
+		auto log = std::make_shared<spdlog::logger>("global log", std::move(sink));
+#ifndef NDEBUG
+		log->set_level(spdlog::level::debug);
 #else
-		gLog.SetPrintLevel(IDebugLog::kLevel_Message);
-		gLog.SetLogLevel(IDebugLog::kLevel_Message);
+		log->set_level(spdlog::level::info);
 #endif
-
-		unsigned int runtime = skse->runtimeVersion;
-
-		_MESSAGE("Skyrim version:\t%d.%d.%d",
-			GET_EXE_VERSION_MAJOR(runtime),
-			GET_EXE_VERSION_MINOR(runtime),
-			GET_EXE_VERSION_BUILD(runtime));
-		_MESSAGE("SKSE version:\t%d.%d.%d",
-			GET_EXE_VERSION_MAJOR(skse->skseVersion),
-			GET_EXE_VERSION_MINOR(skse->skseVersion),
-			GET_EXE_VERSION_BUILD(skse->skseVersion));
-		_MESSAGE("Plugin version:\t%d.%d.%d-%x\n", VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, CURRENT_RELEASE_RUNTIME);
-
-		auto spi = static_cast<SKSEPapyrusInterface*>(skse->QueryInterface(kInterface_Papyrus));
-
-		if (!spi) {
-			_FATALERROR("Failed to get an SKSE papyrus interface. Plugin loading aborted.");
-			return false;
-		}
-
-		if (!spi->Register(wind::registerFunctions)) {
-			_FATALERROR("Function registration failed. Plugin loading aborted.");
-			return false;
-		}
-
-		hdt::PluginHelper<MyHelper>::tryConnect(skse);
-
-		return true;
+		log->flush_on(spdlog::level::info);
+		spdlog::set_default_logger(std::move(log));
+		spdlog::set_pattern("%v");
 	}
+}
 
-	__declspec(dllexport) bool SKSEPlugin_Query(const SKSEInterface*, PluginInfo* info)
-	{
-		info->infoVersion = PluginInfo::kInfoVersion;
-		info->name = SKSEPlugin_Version.name;
-		info->version = SKSEPlugin_Version.pluginVersion;
+namespace Plugin
+{
+	inline constexpr auto NAME = "SMP Wind"sv;
+	inline constexpr REL::Version VERSION{ 2, 4, 0 };
+}
 
+// Declared by hand rather than via SKSEPluginInfo/add_commonlibsse_plugin: PluginVersionData
+// defaults versionIndependenceEx to kVersionIndependentEx_AddressLibraryV5, which SKSE 2.3+
+// (Skyrim 1.7.99+) requires; the declarative path at this CommonLib commit does not set it.
+extern "C" __declspec(dllexport) constinit auto SKSEPlugin_Version = []() {
+	SKSE::PluginVersionData v;
+	v.PluginVersion(Plugin::VERSION);
+	v.PluginName(Plugin::NAME);
+	v.AuthorName("jgernandt"sv);
+	v.UsesAddressLibrary();
+	v.UsesNoStructs();  // RE::Sky layout used here is identical pre/post 1.6.629
+	return v;
+}();
+
+// Pre-AE (1.5.97) SKSE loads plugins via Query
+extern "C" __declspec(dllexport) bool SKSEAPI SKSEPlugin_Query(const SKSE::QueryInterface* skse, SKSE::PluginInfo* info)
+{
+	info->infoVersion = SKSE::PluginInfo::kVersion;
+	info->name = Plugin::NAME.data();
+	info->version = Plugin::VERSION.pack();
+	return !skse->IsEditor();
+}
+
+extern "C" __declspec(dllexport) bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* skse)
+{
+	SKSE::Init(skse);
+	initLog();
+
+	logger::info("{} v{}", Plugin::NAME, Plugin::VERSION.string());
+	logger::info("Skyrim version:\t{}", skse->RuntimeVersion().string());
+	logger::info("SKSE version:\t{}\n", REL::Version::unpack(skse->SKSEVersion()).string());
+
+	auto papyrus = SKSE::GetPapyrusInterface();
+	if (!papyrus || !papyrus->Register(wind::registerFunctions)) {
+		_FATALERROR("Function registration failed. Plugin loading aborted.");
 		return false;
 	}
-};
+
+	hdt::PluginHelper<MyHelper>::tryConnect();
+
+	return true;
+}

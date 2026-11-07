@@ -4,40 +4,23 @@ A Skyrim mod that adds wind physics to HDT-SMP.
 
 ## Dependencies
 
-[ianpatt/common](https://github.com/ianpatt/common)
+- [CommonLibSSE-NG (alandtse/CommonLibVR, `ng`)](https://github.com/alandtse/CommonLibVR) — git submodule, pinned to the commit FSMP uses
+- [Faster HDT-SMP (DaymareOn/hdtSMP64)](https://github.com/DaymareOn/hdtSMP64) at runtime — plugin interface 2.x
+- [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444) at runtime
+- vcpkg (manifest mode) for CommonLib's dependencies and Bullet headers
 
-[ianpatt/skse64](https://github.com/ianpatt/skse64)
-
-[jgernandt/hdtSMP64](https://github.com/jgernandt/hdtSMP64)
+The plugin is version independent (Address Library) and works on SE 1.5.97, AE 1.6.x and 1.7.x.
 
 ## Build instructions
 
-Requires Visual Studio (toolset v142 (2019) recommended, v143 (2022) is probably also fine)
+Requires Visual Studio 2022 (MSVC v143), CMake ≥ 3.22 and vcpkg with `VCPKG_ROOT` set.
 
-You'll need to build LIB files of common and skse64 and provide their paths, as well as the paths of their headers. Here's one way to do it:
-- Clone smp-wind and all dependencies into the same root directory
+```
+git clone --recurse-submodules <this repo>
+cmake --preset release
+cmake --build --preset release
+```
 
----
+The DLL lands in `build/Release/SMP Wind.dll`. Pass `-DOUTPUT_DIR="<mod folder>"` at configure time to copy it to `<mod folder>/SKSE/Plugins` after each build.
 
-- Open skse64.sln (upgrade Windows SDK version if prompted)
-- Open the Configuration manager. Choose Release configuration and set project configurations to Release_VC142 (common, skse64) or Release_Lib_VC142 (skse64). Uncheck the "loader" projects from the build.
-- Open Project properties and make the following changes to the active configuration:  
-    - common_vc14:  
-        *General > Output directory*: change to **$(SolutionDir)\lib\Release**  
-        *General > Target name*: change to **common**  
-        *C/C++ > Additional include directories*: add **$(SolutionDir)..\common**;  
-    - skse64_common:  
-        *General > Output directory*: change to **$(SolutionDir)\lib\Release**  
-    - skse64:  
-        *General > Output directory*: change to **$(SolutionDir)\lib\Release**  
-        *General > Target name*: remove **_1_6_323**  
-        *Build events > Post-build event > Use in build*: change to **no**  
-- Build the solution. Repeat for Debug build if required.
-
----
-
-- Open smp-wind.sln
-- Open Project properties and make the following changes:  
-    *C/C++ > Additional include directories*: add **$(SolutionDir)..\common;** and **$(SolutionDir)..\skse64;**  
-    *Linker > Additional library directories*: add **$(SolutionDir)..\skse64\lib\\$(Configuration)\;**  
-- Build the solution.
+Without a Windows machine: push to a GitHub fork; `.github/workflows/build.yml` builds on `windows-2022` and uploads `SKSE/Plugins/SMP Wind.dll` as a workflow artifact.

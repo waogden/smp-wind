@@ -1,0 +1,47 @@
+name: Build SMP Wind
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\vcpkg\archives
+          key: vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          $cache = "$env:LOCALAPPDATA\vcpkg\archives"
+          New-Item -ItemType Directory -Force -Path $cache | Out-Null
+          $env:VCPKG_BINARY_SOURCES = "clear;files,$cache,readwrite"
+          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
+          cmake --preset release
+
+      - name: Build
+        run: cmake --build --preset release
+
+      - name: Stage mod folder
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "dist/SKSE/Plugins" | Out-Null
+          Copy-Item "build/Release/SMP Wind.dll" dist/SKSE/Plugins/
+          Copy-Item "build/Release/SMP Wind.pdb" dist/SKSE/Plugins/ -ErrorAction SilentlyContinue
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smp-wind
+          path: dist/

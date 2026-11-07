@@ -98,7 +98,7 @@ bool wind::Config::load(const std::filesystem::path& path)
 		if (std::filesystem::exists(path)) {
 			char buf[256];
 			for (int i = 0; i < BOOL_COUNT; i++) {
-				DWORD res = GetPrivateProfileString(HDRSB[i], KEYSB[i], NULL, buf, sizeof(buf), m_path.string().c_str());
+				DWORD res = GetPrivateProfileStringA(HDRSB[i], KEYSB[i], NULL, buf, sizeof(buf), m_path.string().c_str());
 				if (res == 0) {
 					m_bools[i] = DEFAULTSB[i];
 				}
@@ -114,7 +114,7 @@ bool wind::Config::load(const std::filesystem::path& path)
 			}
 
 			for (int i = 0; i < FLOAT_COUNT; i++) {
-				DWORD res = GetPrivateProfileString(HDRSF[i], KEYSF[i], NULL, buf, sizeof(buf), m_path.string().c_str());
+				DWORD res = GetPrivateProfileStringA(HDRSF[i], KEYSF[i], NULL, buf, sizeof(buf), m_path.string().c_str());
 				if (res == 0) {
 					m_floats[i] = DEFAULTSF[i];
 				}
@@ -132,7 +132,7 @@ bool wind::Config::load(const std::filesystem::path& path)
 				}
 			}
 			for (int i = 0; i < INT_COUNT; i++) {
-				DWORD res = GetPrivateProfileString(HDRSI[i], KEYSI[i], NULL, buf, sizeof(buf), m_path.string().c_str());
+				DWORD res = GetPrivateProfileStringA(HDRSI[i], KEYSI[i], NULL, buf, sizeof(buf), m_path.string().c_str());
 				if (res == 0) {
 					m_ints[i] = DEFAULTSI[i];
 				}
@@ -207,7 +207,7 @@ void wind::Config::set(int id, bool b)
 
 	m_bools[id] = b;
 
-	WritePrivateProfileString(HDRSB[id], KEYSB[id], b ? "1" : "0", m_path.string().c_str());
+	WritePrivateProfileStringA(HDRSB[id], KEYSB[id], b ? "1" : "0", m_path.string().c_str());
 }
 
 void wind::Config::set(int id, float f)
@@ -218,7 +218,7 @@ void wind::Config::set(int id, float f)
 
 	char buf[16];
 	snprintf(buf, sizeof(buf), "%f", m_floats[id]);
-	WritePrivateProfileString(HDRSF[id], KEYSF[id], buf, m_path.string().c_str());
+	WritePrivateProfileStringA(HDRSF[id], KEYSF[id], buf, m_path.string().c_str());
 }
 
 void wind::Config::set(int id, int i)
@@ -229,5 +229,5 @@ void wind::Config::set(int id, int i)
 
 	char buf[16];
 	snprintf(buf, sizeof(buf), "%d", m_ints[id]);
-	WritePrivateProfileString(HDRSI[id], KEYSI[id], buf, m_path.string().c_str());
+	WritePrivateProfileStringA(HDRSI[id], KEYSI[id], buf, m_path.string().c_str());
 }
